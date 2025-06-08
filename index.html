@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom HLS.js Web Player</title>
+  <style>
+    /* Dark theme styling */
+    body { background-color: #121212; color: #e0e0e0; font-family: Arial, sans-serif; margin: 20px; }
+    a, a:visited { color: #90caf9; }
+    #player-container { max-width: 800px; margin: auto; }
+    h2, h3, label { color: #bb86fc; }
+    video { width: 100%; height: auto; background: #000; border: 1px solid #333; }
+    .controls { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .controls > * { margin-right: 10px; }
+    button, select { background-color: #1f1f1f; color: #e0e0e0; border: 1px solid #333; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    button:hover, select:hover { background-color: #333; }
+    #info { margin-top: 10px; background-color: #1f1f1f; padding: 10px; border-radius: 4px; }
+    #log { margin-top: 10px; max-height: 150px; overflow-y: scroll; background: #1f1f1f; padding: 10px; font-size: 0.9em; border: 1px solid #333; border-radius: 4px; }
+    #log p { margin: 5px 0; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+<div id="player-container">
+  <h2>Mikita's HLS Player</h2>
+  <div>
+    <label for="playlistSelect">Choose stream:</label>
+    <select id="playlistSelect">
+      <option value="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">Big Buck Bunny (Master)</option>
+      <option value="https://moose.stream/test/hls/master.m3u8">TOS Master</option>
+      <option value="https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8">Sintel (Master)</option>
+    </select>
+    <button id="loadBtn">Load</button>
+  </div>
+  <video id="video" controls></video>
+  <div class="controls">
+    <div id="qualityButtons"></div>
+    <button id="infoBtn">Show Info</button>
+  </div>
+  <div id="info" class="hidden"></div>
+  <h3>Request Log</h3>
+  <div id="log"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+  const video = document.getElementById('video');
+  const playlistSelect = document.getElementById('playlistSelect');
+  const loadBtn = document.getElementById('loadBtn');
+  const qualityButtons = document.getElementById('qualityButtons');
+  const infoDiv = document.getElementById('info');
+  const infoBtn = document.getElementById('infoBtn');
+  const logDiv = document.getElementById('log');
+  let hls;
+
+  // GEO-based access control
+  const allowedCountries = ['US', 'CA', 'GB']; // whitelist
+  fetch('https://www.geoplugin.net/json.gp')
+          .then(res => res.json())
+          .then(data => {
+            const country = data.geoplugin_countryCode;
+            if (!allowedCountries.includes(country)) {
+              document.getElementById('player-container').innerHTML = '<p>Access denied: Your region is not permitted.</p>';
+            }
+          });
+
+  function logRequest(url) {
+    const p = document.createElement('p');
+    p.textContent = url;
+    logDiv.prepend(p);
+  }
+
+  function setupQualityButtons() {
+    qualityButtons.innerHTML = '';
+    hls.levels.forEach((level, index) => {
+      const btn = document.createElement('button');
+      btn.textContent = `${level.height}p @ ${Math.round(level.bitrate/1000)}kbps`;
+      btn.addEventListener('click', () => {
+        hls.currentLevel = index;
+      });
+      qualityButtons.appendChild(btn);
+    });
+  }
+
+  function showInfo() {
+    const level = hls.levels[hls.currentLevel];
+    infoDiv.innerHTML = `
+        <ul>
+          <li>Resolution: ${level.width}×${level.height}</li>
+          <li>Bitrate: ${Math.round(level.bitrate/1000)} kbps</li>
+          <li>Video Codec: ${level.videoCodec}</li>
+          <li>Audio Codec: ${level.audioCodec || 'unknown'}</li>
+        </ul>`;
+    infoDiv.classList.toggle('hidden');
+  }
+
+  loadBtn.addEventListener('click', () => {
+    if (hls) { hls.destroy(); logDiv.innerHTML = ''; infoDiv.innerHTML=''; }
+    const url = playlistSelect.value;
+    if (Hls.isSupported()) {
+      hls = new Hls();
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        hls.loadSource(url);
+      });
+      hls.on(Hls.Events.LEVEL_LOADED, () => {
+        setupQualityButtons();
+      });
+      hls.on(Hls.Events.FRAG_LOADING, (event, data) => {
+        logRequest(data.url);
+      });
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error('HLS error', data);
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = url;
+    }
+  });
+
+  infoBtn.addEventListener('click', showInfo);
+</script>
+</body>
+</html>
+
